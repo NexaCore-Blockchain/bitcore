@@ -228,6 +228,21 @@ function disableRegtest() {
   testnet.regtestEnabled = false;
 }
 
+addNetwork({
+  name: 'komodo',
+  alias: 'kmd',
+  pubkeyhash: 0x3c,
+  privatekey: 0xbc,
+  scripthash: 0x55,
+  xpubkey: 0x0488b21e,
+  xprivkey: 0x0488ade4,
+  networkMagic: 0xf9eee48d,
+  zaddr: 0x16b6,
+  zkey: 0xac08,
+});
+
+var komodo = get('komodo');
+
 /**
  * @namespace Networks
  */
@@ -239,6 +254,7 @@ module.exports = {
   mainnet: livenet,
   testnet: testnet,
   regtest: regtest,
+  komodo: komodo,
   get: get,
   enableRegtest: enableRegtest,
   disableRegtest: disableRegtest
