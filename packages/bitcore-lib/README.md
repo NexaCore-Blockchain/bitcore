@@ -35,6 +35,7 @@ The complete docs are hosted here: [bitcore documentation](https://github.com/bi
 - [Create an OP RETURN transaction](docs/examples.md#create-an-op-return-transaction)
 - [Create a 2-of-3 multisig P2SH address](docs/examples.md#create-a-2-of-3-multisig-p2sh-address)
 - [Spend from a 2-of-2 multisig P2SH address](docs/examples.md#spend-from-a-2-of-2-multisig-p2sh-address)
+- [Get a Komodo public address from Bitcore specific V4PK xpub](docs/examples.md#get-a-komodo-address-from-v4pk-xpub)
 
 ## Building the Browser Bundle
 
