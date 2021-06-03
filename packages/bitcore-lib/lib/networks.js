@@ -88,6 +88,9 @@ function addNetwork(data) {
     JSUtil.defineImmutable(network, {
       networkMagic: BufferUtil.integerAsBuffer(data.networkMagic)
     });
+    JSUtil.defineImmutable(network, {
+      networkMagicHex: BufferUtil.bufferToHex(BufferUtil.integerAsBuffer(data.networkMagic)).toString()
+    });
   }
 
   if (data.port) {
