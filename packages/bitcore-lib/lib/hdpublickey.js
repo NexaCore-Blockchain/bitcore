@@ -431,7 +431,7 @@ HDPublicKey.prototype.inspect = function() {
  */
 HDPublicKey.prototype.toObject = HDPublicKey.prototype.toJSON = function toObject() {
   return {
-    network: Network.get(BufferUtil.bufferToHex(this._buffers.version)).name,
+    network: (Network.get(BufferUtil.bufferToHex(this._buffers.version)) || Network.get(BufferUtil.integerFromBuffer(this._buffers.version))).name,
     depth: BufferUtil.integerFromSingleByteBuffer(this._buffers.depth),
     fingerPrint: BufferUtil.integerFromBuffer(this.fingerPrint),
     parentFingerPrint: BufferUtil.integerFromBuffer(this._buffers.parentFingerPrint),
