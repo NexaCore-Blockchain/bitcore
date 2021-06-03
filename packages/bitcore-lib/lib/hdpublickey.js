@@ -266,7 +266,7 @@ HDPublicKey.prototype._buildFromPrivate = function (arg) {
   var args = _.clone(arg._buffers);
   var point = Point.getG().mul(BN.fromBuffer(args.privateKey));
   args.publicKey = Point.pointToCompressed(point);
-  args.version = BufferUtil.integerAsBuffer(Network.get(BufferUtil.integerFromBuffer(args.version)).xpubkey);
+  args.version = BufferUtil.integerAsBuffer(Network.get(BufferUtil.bufferToHex(args.version)).xpubkey);
   args.privateKey = undefined;
   args.checksum = undefined;
   args.xprivkey = undefined;
@@ -276,8 +276,9 @@ HDPublicKey.prototype._buildFromPrivate = function (arg) {
 HDPublicKey.prototype._buildFromObject = function(arg) {
   /* jshint maxcomplexity: 10 */
   // TODO: Type validation
+  if (!arg.network && arg.publicKey && arg.publicKey.network) arg.network = arg.publicKey.network;
   var buffers = {
-    version: arg.network ? BufferUtil.integerAsBuffer(Network.get(arg.network).xpubkey) : arg.version,
+    version: arg.network ? BufferUtil.integerAsBuffer(Network.get(arg.network.name).xpubkey) : arg.version,
     depth: _.isNumber(arg.depth) ? BufferUtil.integerAsSingleByteBuffer(arg.depth) : arg.depth,
     parentFingerPrint: _.isNumber(arg.parentFingerPrint) ? BufferUtil.integerAsBuffer(arg.parentFingerPrint) : arg.parentFingerPrint,
     childIndex: _.isNumber(arg.childIndex) ? BufferUtil.integerAsBuffer(arg.childIndex) : arg.childIndex,
@@ -344,16 +345,16 @@ HDPublicKey.prototype._buildFromBuffers = function(arg) {
       throw new errors.InvalidB58Checksum(concat, checksum);
     }
   }
-  var network = Network.get(BufferUtil.integerFromBuffer(arg.version));
+  var network = Network.get(BufferUtil.bufferToHex(arg.version));
 
   var xpubkey;
   xpubkey = Base58Check.encode(BufferUtil.concat(sequence));
   arg.xpubkey = Buffer.from(xpubkey);
-
+  
   var publicKey = new PublicKey(arg.publicKey, {network: network});
   var size = HDPublicKey.ParentFingerPrintSize;
   var fingerPrint = Hash.sha256ripemd160(publicKey.toBuffer()).slice(0, size);
-
+  
   JSUtil.defineImmutable(this, {
     xpubkey: xpubkey,
     network: network,
@@ -430,7 +431,7 @@ HDPublicKey.prototype.inspect = function() {
  */
 HDPublicKey.prototype.toObject = HDPublicKey.prototype.toJSON = function toObject() {
   return {
-    network: Network.get(BufferUtil.integerFromBuffer(this._buffers.version)).name,
+    network: Network.get(BufferUtil.bufferToHex(this._buffers.version)).name,
     depth: BufferUtil.integerFromSingleByteBuffer(this._buffers.depth),
     fingerPrint: BufferUtil.integerFromBuffer(this.fingerPrint),
     parentFingerPrint: BufferUtil.integerFromBuffer(this._buffers.parentFingerPrint),
