@@ -120,3 +120,12 @@ var transaction = new bitcore.Transaction()
     .to('mtoKs9V381UAhUia3d7Vb9GNak8Qvmcsme', 20000)
     .sign(privateKeys);
 ```
+
+## Get a Komodo address from V4PK XPUB
+
+```javascript
+var HDPublicKey = new bitcore.HDPublicKey.fromString('paste xpub or bitcorelib encoded xpub here');
+var HDChildPK = HDPublicKey.deriveChild('m/0/0');
+var pubkey = new bitcore.PublicKey(HDChildPK.publicKey);
+var address = new bitcore.Address.fromPublicKey(pubkey, bitcore.Networks.komodo).toString();
+```
