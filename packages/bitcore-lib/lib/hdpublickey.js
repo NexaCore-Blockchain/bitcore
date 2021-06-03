@@ -278,7 +278,7 @@ HDPublicKey.prototype._buildFromObject = function(arg) {
   // TODO: Type validation
   if (!arg.network && arg.publicKey && arg.publicKey.network) arg.network = arg.publicKey.network;
   var buffers = {
-    version: arg.network ? BufferUtil.integerAsBuffer(Network.get(arg.network.name).xpubkey) : arg.version,
+    version: arg.network ? BufferUtil.integerAsBuffer(Network.get(arg.network).xpubkey) : arg.version,
     depth: _.isNumber(arg.depth) ? BufferUtil.integerAsSingleByteBuffer(arg.depth) : arg.depth,
     parentFingerPrint: _.isNumber(arg.parentFingerPrint) ? BufferUtil.integerAsBuffer(arg.parentFingerPrint) : arg.parentFingerPrint,
     childIndex: _.isNumber(arg.childIndex) ? BufferUtil.integerAsBuffer(arg.childIndex) : arg.childIndex,
