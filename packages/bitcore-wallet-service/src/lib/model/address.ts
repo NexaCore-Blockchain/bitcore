@@ -14,6 +14,7 @@ export interface IAddress {
   address: string;
   walletId: string;
   isChange: boolean;
+  isEscrow: boolean;
   path: string;
   publicKeys: string[];
   coin: string;
@@ -29,6 +30,7 @@ export class Address {
   address: string;
   walletId: string;
   isChange: boolean;
+  isEscrow: boolean;
   path: string;
   publicKeys: string[];
   coin: string;
@@ -40,7 +42,8 @@ export class Address {
   static Bitcore = {
     btc: require('bitcore-lib'),
     bch: require('bitcore-lib-cash'),
-    doge: require('bitcore-lib-doge')
+    doge: require('bitcore-lib-doge'),
+    ltc: require('bitcore-lib-ltc')
   };
 
   static create(opts) {
@@ -55,6 +58,7 @@ export class Address {
     x.address = opts.address;
     x.walletId = opts.walletId;
     x.isChange = opts.isChange;
+    x.isEscrow = opts.isEscrow;
     x.path = opts.path;
     x.publicKeys = opts.publicKeys;
     x.coin = opts.coin;
@@ -77,6 +81,7 @@ export class Address {
     x.coin = obj.coin || Defaults.COIN;
     x.network = obj.network;
     x.isChange = obj.isChange;
+    x.isEscrow = obj.isEscrow;
     x.path = obj.path;
     x.publicKeys = obj.publicKeys;
     x.type = obj.type || Constants.SCRIPT_TYPES.P2SH;
@@ -85,10 +90,10 @@ export class Address {
     return x;
   }
 
-  static _deriveAddress(scriptType, publicKeyRing, path, m, coin, network, noNativeCashAddr) {
+  static _deriveAddress(scriptType, publicKeyRing, path, m, coin, network, noNativeCashAddr, escrowInputs?) {
     $.checkArgument(Utils.checkValueInCollection(scriptType, Constants.SCRIPT_TYPES));
 
-    const publicKeys = _.map(publicKeyRing, item => {
+    let publicKeys = _.map(publicKeyRing, item => {
       const xpub = Address.Bitcore[coin]
         ? new Address.Bitcore[coin].HDPublicKey(item.xPubKey)
         : new Address.Bitcore.btc.HDPublicKey(item.xPubKey);
@@ -108,10 +113,17 @@ export class Address {
         );
         break;
       case Constants.SCRIPT_TYPES.P2SH:
-        bitcoreAddress = Address.Bitcore[coin].Address.createMultisig(publicKeys, m, network);
+        if (escrowInputs) {
+          var xpub = new Address.Bitcore[coin].HDPublicKey(publicKeyRing[0].xPubKey);
+          const inputPublicKeys = escrowInputs.map(input => xpub.deriveChild(input.path).publicKey);
+          bitcoreAddress = Address.Bitcore[coin].Address.createEscrow(inputPublicKeys, publicKeys[0], network);
+          publicKeys = [publicKeys[0], ...inputPublicKeys];
+        } else {
+          bitcoreAddress = Address.Bitcore[coin].Address.createMultisig(publicKeys, m, network);
+        }
         break;
       case Constants.SCRIPT_TYPES.P2WPKH:
-        bitcoreAddress = Address.Bitcore.btc.Address.fromPublicKey(publicKeys[0], network, 'witnesspubkeyhash');
+        bitcoreAddress = Address.Bitcore[coin].Address.fromPublicKey(publicKeys[0], network, 'witnesspubkeyhash');
         break;
       case Constants.SCRIPT_TYPES.P2PKH:
         $.checkState(
@@ -143,15 +155,36 @@ export class Address {
   }
 
   // noNativeCashAddr only for testing
-  static derive(walletId, scriptType, publicKeyRing, path, m, coin, network, isChange, noNativeCashAddr = false) {
-    const raw = Address._deriveAddress(scriptType, publicKeyRing, path, m, coin, network, noNativeCashAddr);
+  static derive(
+    walletId,
+    scriptType,
+    publicKeyRing,
+    path,
+    m,
+    coin,
+    network,
+    isChange,
+    noNativeCashAddr = false,
+    escrowInputs?
+  ) {
+    const raw = Address._deriveAddress(
+      scriptType,
+      publicKeyRing,
+      path,
+      m,
+      coin,
+      network,
+      noNativeCashAddr,
+      escrowInputs
+    );
     return Address.create(
       _.extend(raw, {
         coin,
         network,
         walletId,
         type: scriptType,
-        isChange
+        isChange,
+        isEscrow: !!escrowInputs
       })
     );
   }

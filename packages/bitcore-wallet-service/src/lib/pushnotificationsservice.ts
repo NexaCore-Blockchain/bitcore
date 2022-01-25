@@ -28,7 +28,7 @@ const PUSHNOTIFICATIONS_TYPES = {
     filename: 'new_tx_proposal'
   },
   NewOutgoingTx: {
-    filename: 'new_outgoing_tx'
+    filename: ['new_outgoing_tx', 'new_zero_outgoing_tx']
   },
   NewIncomingTx: {
     filename: ['new_incoming_tx_testnet', 'new_incoming_tx']
@@ -155,6 +155,9 @@ export class PushNotificationsService {
 
     if (notification.type === 'NewIncomingTx') {
       notifType.filename = notification.data.network === 'testnet' ? notifType.filename[0] : notifType.filename[1];
+    } else if (notification.type === 'NewOutgoingTx') {
+      // Handle zero amount ETH transactions to contract addresses
+      notifType.filename = notification.data.amount !== 0 ? notifType.filename[0] : notifType.filename[1];
     } else if (notification.type === 'TxConfirmation') {
       if (notification.data && !notification.data.amount) {
         // backward compatibility
@@ -204,7 +207,10 @@ export class PushNotificationsService {
                     tokenAddress,
                     multisigContractAddress,
                     copayerId: sjcl.codec.hex.fromBits(sjcl.hash.sha256.hash(sub.copayerId)),
-                    notification_type: notification.type
+                    notification_type: notification.type,
+                    // coin and network are needed for NewBlock notifications
+                    coin: notification?.data?.coin,
+                    network: notification?.data?.network
                   }
                 };
 
@@ -369,7 +375,7 @@ export class PushNotificationsService {
     );
   }
 
-  _getDataForTemplate(notification: INotification, recipient, cb) {
+  async _getDataForTemplate(notification: INotification, recipient, cb) {
     const UNIT_LABELS = {
       btc: 'BTC',
       bit: 'bits',
@@ -377,12 +383,14 @@ export class PushNotificationsService {
       eth: 'ETH',
       xrp: 'XRP',
       doge: 'DOGE',
+      ltc: 'LTC',
       usdc: 'USDC',
       pax: 'PAX',
       gusd: 'GUSD',
       busd: 'BUSD',
       wbtc: 'WBTC',
-      dai: 'DAI'
+      dai: 'DAI',
+      shib: 'SHIB'
     };
     const data = _.cloneDeep(notification.data);
     data.subjectPrefix = _.trim(this.subjectPrefix + ' ');
@@ -390,17 +398,33 @@ export class PushNotificationsService {
       try {
         let unit = recipient.unit.toLowerCase();
         let label = UNIT_LABELS[unit];
+        let opts = {} as any;
         if (data.tokenAddress) {
           const tokenAddress = data.tokenAddress.toLowerCase();
           if (Constants.TOKEN_OPTS[tokenAddress]) {
             unit = Constants.TOKEN_OPTS[tokenAddress].symbol.toLowerCase();
             label = UNIT_LABELS[unit];
           } else {
-            label = 'tokens';
-            throw new Error('Notifications for unsupported token are not allowed');
+            let customTokensData;
+            try {
+              customTokensData = await this.getTokenData();
+            } catch (error) {
+              throw new Error('Could not get custom tokens data');
+            }
+            if (customTokensData && customTokensData[tokenAddress]) {
+              unit = customTokensData[tokenAddress].symbol.toLowerCase();
+              label = unit.toUpperCase();
+              opts.toSatoshis = 10 ** customTokensData[tokenAddress].decimals;
+              opts.decimals = {
+                maxDecimals: 6,
+                minDecimals: 2
+              };
+            } else {
+              throw new Error('Notifications for unsupported token are not allowed');
+            }
           }
         }
-        data.amount = Utils.formatAmount(+data.amount, unit) + ' ' + label;
+        data.amount = Utils.formatAmount(+data.amount, unit, opts) + ' ' + label;
       } catch (ex) {
         return cb(new Error('Could not format amount' + ex));
       }
@@ -531,5 +555,24 @@ export class PushNotificationsService {
       },
       cb
     );
+  }
+
+  getTokenData() {
+    return new Promise((resolve, reject) => {
+      this.request(
+        {
+          url: 'https://bitpay.api.enterprise.1inch.exchange/v3.0/1/tokens',
+          method: 'GET',
+          json: true,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        },
+        (err, data: any) => {
+          if (err) return reject(err);
+          return resolve(data.body.tokens);
+        }
+      );
+    });
   }
 }

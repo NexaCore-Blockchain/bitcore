@@ -3928,6 +3928,51 @@ describe('client API', function() {
           );
         });
       });
+
+      it('Should sign a RBF proposal', done => {
+        var toAddress = 'n2TBMPzPECGUfcT2EByiTJ12TPZkhN2mN5';
+        var opts = {
+          outputs: [
+            {
+              amount: 1e8,
+              toAddress: toAddress
+            },
+            {
+              amount: 2e8,
+              toAddress: toAddress
+            }
+          ],
+          feePerKb: 100e2,
+          message: 'just some message',
+          enableRBF: true
+        };
+        clients[0].createTxProposal(opts, (err, txp) => {
+          should.not.exist(err);
+          should.exist(txp);
+          clients[0].publishTxProposal(
+            {
+              txp: txp
+            },
+            (err, publishedTxp) => {
+              should.not.exist(err);
+              should.exist(publishedTxp);
+              publishedTxp.status.should.equal('pending');
+
+              let signatures = keys[0].sign(clients[0].getRootPath(), txp);
+              clients[0].pushSignatures(publishedTxp, signatures, (err, txp) => {
+                should.not.exist(err);
+                let signatures2 = keys[1].sign(clients[1].getRootPath(), txp);
+                clients[1].pushSignatures(publishedTxp, signatures2, (err, txp) => {
+                  should.not.exist(err);
+                  txp.status.should.equal('accepted');
+                  done();
+                });
+              });
+            }
+          );
+        });
+      });
+      
       it('Should sign proposal with no change', done => {
         var toAddress = 'n2TBMPzPECGUfcT2EByiTJ12TPZkhN2mN5';
         var opts = {
@@ -6522,6 +6567,37 @@ describe('client API', function() {
                 });
               }
             );
+          });
+        });
+      });
+
+      it('should not fail to gain access to eth wallet with unknown tokens addresses from mnemonic (Case 3)', done => {
+        helpers.createAndJoinWallet(clients, keys, 1, 1, { coin: 'eth' }, () => {
+          var words = keys[0].get(null, true).mnemonic;
+          var walletName = clients[0].credentials.walletName;
+          var copayerName = clients[0].credentials.copayerName;
+
+          clients[0].savePreferences({ tokenAddresses: ['0x9da9bc12b19b22d7c55798f722a1b6747ae9a710'] }, err => {
+            should.not.exist(err);
+              Client.serverAssistedImport(
+              { words },
+              {
+                clientFactory: () => {
+                  return helpers.newClient(app);
+                }
+              },
+              (err, k, c) => {
+                // the eth wallet + 1 unknown token addresses on preferences.
+                c.length.should.equal(1);
+                let recoveryClient = c[0];
+                recoveryClient.openWallet(err => {
+                  should.not.exist(err);
+                  recoveryClient.credentials.walletName.should.equal(walletName);
+                  recoveryClient.credentials.copayerName.should.equal(copayerName);
+                  recoveryClient.credentials.coin.should.equal('eth');
+                  done();
+                });
+              })
           });
         });
       });

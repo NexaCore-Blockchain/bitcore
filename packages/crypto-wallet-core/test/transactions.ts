@@ -211,29 +211,75 @@ describe('Transaction Creation', () => {
     expect(data).to.equal(expectedData);
   });
 
-  it('should be only create a mainnet ETH tx with one recipient', () => {
-    const rawEthTx = {
-      network: 'mainnet',
-      value: 3896000000000000,
-      to: '0x37d7B3bBD88EFdE6a93cF74D2F5b0385D3E3B08A',
-      data:
-        '0xb6b4af05000000000000000000000000000000000000000000000000000dd764300b800000000000000000000000000000000000000000000000000000000004a817c8000000000000000000000000000000000000000000000000000000016ada606a26050bb49a5a8228599e0dd48c1368abd36f4f14d2b74a015b2d168dbcab0773ce399393220df874bb22ca961f351e038acd2ba5cc8c764385c9f23707622cc435000000000000000000000000000000000000000000000000000000000000001c7e247d684a635813267b10a63f7f3ba88b28ca2790c909110b28236cf1b9bba03451e83d5834189f28d4c77802fc76b7c760a42bc8bebf8dd15e6ead146805630000000000000000000000000000000000000000000000000000000000000000',
-      gasPrice: 20000000000
+  it('should be able to send ETH to multiple using multisend contract', () => {
+    const wallet = {
+      address: '0xb4b9be3062b6dB6eDa78fa4b5EA80595Cfa7E655',
+      privateKey: '0x733d4cddb30d33f324def2bb80c6a844f7ba342a60bed06d838afb6b37ab1972',
+      index: 0
     };
-    const { value, to } = rawEthTx;
-    const recipients = [
-      { address: to, amount: value },
-      { address: to, amount: value }
-    ];
+    const rawEthTx = {
+      value: 3896000000000000,
+      to: '0xf514e00E20373f6366C9AF966fF5F8be587595E9',
+    };
+    const rawEthTx2 = {
+      value: 20407919369583210,
+      to: '0x3428F3Eb7df7D4a16f9e4A5098574Cea2CFBbdc6',
+    }
+    const recipients = [{ address: rawEthTx.to, amount: rawEthTx.value }, { address: rawEthTx2.to, amount: rawEthTx2.value }];
     const cryptoTx = Transactions.create({
-      ...rawEthTx,
+      network: 'testnet',
       chain: 'ETH',
       recipients,
-      nonce: 0
+      nonce: 3,
+      contractAddress: '0x44dfceb88f24c738d8ae9b7d4bb898cbca06db0e',
+      gasPrice: 1000000008,
+      gasLimit: 71994
     });
     const expectedTx =
-      '0xf9014f808504a817c800809437d7b3bbd88efde6a93cf74d2f5b0385d3e3b08a870dd764300b8000b90124b6b4af05000000000000000000000000000000000000000000000000000dd764300b800000000000000000000000000000000000000000000000000000000004a817c8000000000000000000000000000000000000000000000000000000016ada606a26050bb49a5a8228599e0dd48c1368abd36f4f14d2b74a015b2d168dbcab0773ce399393220df874bb22ca961f351e038acd2ba5cc8c764385c9f23707622cc435000000000000000000000000000000000000000000000000000000000000001c7e247d684a635813267b10a63f7f3ba88b28ca2790c909110b28236cf1b9bba03451e83d5834189f28d4c77802fc76b7c760a42bc8bebf8dd15e6ead146805630000000000000000000000000000000000000000000000000000000000000000018080';
+      '0xf9013103843b9aca088301193a9444dfceb88f24c738d8ae9b7d4bb898cbca06db0e8756584930ac7a6ab9010425245b26000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000f514e00e20373f6366c9af966ff5f8be587595e90000000000000000000000003428f3eb7df7d4a16f9e4a5098574cea2cfbbdc60000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000dd764300b8000000000000000000000000000000000000000000000000000004880e500a0fa6a2a8080';
     expect(cryptoTx).to.equal(expectedTx);
+
+    const signedTx = Transactions.sign({ chain: 'ETH', tx: cryptoTx, key: { address: wallet.address, privKey: wallet.privateKey } });
+    const expectedSignedTx =
+      '0xf9017103843b9aca088301193a9444dfceb88f24c738d8ae9b7d4bb898cbca06db0e8756584930ac7a6ab9010425245b26000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000f514e00e20373f6366c9af966ff5f8be587595e90000000000000000000000003428f3eb7df7d4a16f9e4a5098574cea2cfbbdc60000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000dd764300b8000000000000000000000000000000000000000000000000000004880e500a0fa6a78a0bea5d9aac59d7337c0735f00c0e93d694b4c495bb3390d9eb07a7c6deb89d5a5a0754454d41354761d6591f98e76a4640768c858980c6d1d359efa49fe0edc9ff4';
+    // https://kovan.etherscan.io/getRawTx?tx=0x34d33c7e40e586cefefcb6fdfff133b67b4a4e182e15637765495b46ce7eb240
+    expect(expectedSignedTx).to.equal(signedTx);
+  });
+
+  it('should be able to send ERC20 to multiple using multisend contract', () => {
+    const wallet = {
+      address: '0xb4b9be3062b6dB6eDa78fa4b5EA80595Cfa7E655',
+      privateKey: '0x733d4cddb30d33f324def2bb80c6a844f7ba342a60bed06d838afb6b37ab1972',
+      index: 0
+    };
+    const rawEthTx = {
+      value: '3823',
+      to: '0xf514e00E20373f6366C9AF966fF5F8be587595E9'
+    };
+    const rawEthTx2 = {
+      value: '900',
+      to: '0x3428F3Eb7df7D4a16f9e4A5098574Cea2CFBbdc6'
+    }
+    const recipients = [{ address: rawEthTx.to, amount: rawEthTx.value }, { address: rawEthTx2.to, amount: rawEthTx2.value }];
+    const cryptoTx = Transactions.create({
+      network: 'ropsten',
+      chain: 'ERC20',
+      recipients,
+      nonce: 48,
+      gasPrice: 1806667388,
+      gasLimit: 56209,
+      contractAddress: '0x328cab2bd398a6e577d8ab1d0ae0b969fd70969c',
+      tokenAddress: '0x75c87615ffc0bb34a24ed4ac62c26a1d8ea75336'
+    });
+    const expectedTx =
+      '0xf9014930846baf8e7c82db9194328cab2bd398a6e577d8ab1d0ae0b969fd70969c80b90124aee2561300000000000000000000000075c87615ffc0bb34a24ed4ac62c26a1d8ea75336000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000f514e00e20373f6366c9af966ff5f8be587595e90000000000000000000000003428f3eb7df7d4a16f9e4a5098574cea2cfbbdc600000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000eef0000000000000000000000000000000000000000000000000000000000000384038080';
+    expect(cryptoTx).to.equal(expectedTx);
+
+    const signedTx = Transactions.sign({ chain: 'ERC20', tx: cryptoTx, key: { address: wallet.address, privKey: wallet.privateKey } });
+    const expectedSignedTx =
+      '0xf9018930846baf8e7c82db9194328cab2bd398a6e577d8ab1d0ae0b969fd70969c80b90124aee2561300000000000000000000000075c87615ffc0bb34a24ed4ac62c26a1d8ea75336000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000f514e00e20373f6366c9af966ff5f8be587595e90000000000000000000000003428f3eb7df7d4a16f9e4a5098574cea2cfbbdc600000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000eef00000000000000000000000000000000000000000000000000000000000003842aa0e0b4515bc51bfd5e1642bd37004b8862c7b5d6be23812cab3994785997687aaaa06637a9d41edfeab987470eb9303d07e3da576ce48d30a42a5344aeede4408f90';
+    // https://ropsten.etherscan.io/tx/0x0ac05ffa47fcd932a89dafdcea5580c4b424f2ae6a38e130f0e3853f561fdf1f
+    expect(expectedSignedTx).to.equal(signedTx);
   });
 
   it('should be able to create a XRP tx', () => {
@@ -292,6 +338,80 @@ describe('Transaction Creation', () => {
         'instance.address is not exactly one from <xAddress>,<classicAddress>,instance.payment.source is not exactly one from <sourceExactAdjustment>,<maxAdjustment>'
       );
     }
+  });
+
+  it('should create a DOGE tx', () => {
+    const recipients = [{ address: 'mpNpzMoprLnSBu8CWDunNCYeJq3Mzdk59V', amount: 1e8 }];
+    const change = 'msnAsQcCdtzDyiSWb4ZnNxFwUy3P9ogQvY';
+    const utxos = [
+      {
+        mintTxid: '643ec66d6c4cad4cbdb8ed2166b8078975e0af9bb7ff7e30d394f43b0d9f18ab',
+        mintIndex: 1,
+        value: 0.02503422 * 1e8,
+        script: '76a91457884dcfe2ab46d3354a42d97333c95e5b80cf0188ac',
+        address: 'moVnNJpHHfssYJEnMTS5xXyGV8RhRQNRz5',
+        sequenceNumber: 4294967294
+      },
+      {
+        mintTxid: '643ec66d6c4cad4cbdb8ed2166b8078975e0af9bb7ff7e30d394f43b0d9f18ab',
+        mintIndex: 0,
+        value: 1e8,
+        script: '76a9144e744a19a009a9dd43a23a7c12045c83e82ac9d288ac',
+        address: 'mnfnJx2xWWptYmBzck3rdE851Dtu9GaZ3F',
+        sequenceNumber: 4294967294
+      }
+    ];
+    const fee = 7440;
+    const tx = Transactions.create({ chain: 'DOGE', recipients, change, utxos, fee, rbf: true });
+
+    const keys = [
+      {
+        address: 'mnfnJx2xWWptYmBzck3rdE851Dtu9GaZ3F',
+        privKey: 'cSFjiifSbZ2hU4jTFwE993LCe2rkZGULCTGWTDWXzHvuXRKxpnc1'
+      },
+      { address: 'moVnNJpHHfssYJEnMTS5xXyGV8RhRQNRz5', privKey: 'cUWVirwp5vh1D6WWbYci3tuGniyf28ERpgU4uL5VSiFDfvNEhJqy' }
+    ];
+    const signed = Transactions.sign({ chain: 'DOGE', tx, keys, utxos });
+    const expected =
+      '0100000002ab189f0d3bf494d3307effb79bafe0758907b86621edb8bd4cad4c6c6dc63e64010000006b483045022100b4fb37f92fb4ec7007166c415d59d888c9526b4550e3ed111e615cfe0e63ba9a022003381d0c43cf3e0762926f4fdff05a2d16fc0e62d59d79a9ca69646d1595b887012102c8f8fa438666cbd287e28fb384b99555e4acce610e8141e887c9c458bba5db5cffffffffab189f0d3bf494d3307effb79bafe0758907b86621edb8bd4cad4c6c6dc63e64000000006a47304402207b4a0deed6371e8ad46bcae7a9a098d99f2210d44600bab72bccba747ef7554c02207678fb99e91275c4fc7d5665371fb935cb789b4e0ad5a880780513368cca8b4b01210321f2f13aed42db7257b64f77d574071a6e81e460ab3693eefb7482c12d1ff697ffffffff0200e1f505000000001976a914612fb4d5e27a28f5c54018d8948ca3a650741c4188acee152600000000001976a91486823ef7c8e210184cc8675189d37c4c9d8e1e0288ac00000000';
+    expect(signed).to.eq(expected);
+  });
+
+  it('should create a LTC tx', () => {
+    const recipients = [{ address: 'mpNpzMoprLnSBu8CWDunNCYeJq3Mzdk59V', amount: 1e8 }];
+    const change = 'msnAsQcCdtzDyiSWb4ZnNxFwUy3P9ogQvY';
+    const utxos = [
+      {
+        mintTxid: '643ec66d6c4cad4cbdb8ed2166b8078975e0af9bb7ff7e30d394f43b0d9f18ab',
+        mintIndex: 1,
+        value: 0.02503422 * 1e8,
+        script: '76a91457884dcfe2ab46d3354a42d97333c95e5b80cf0188ac',
+        address: 'moVnNJpHHfssYJEnMTS5xXyGV8RhRQNRz5',
+        sequenceNumber: 4294967294
+      },
+      {
+        mintTxid: '643ec66d6c4cad4cbdb8ed2166b8078975e0af9bb7ff7e30d394f43b0d9f18ab',
+        mintIndex: 0,
+        value: 1e8,
+        script: '76a9144e744a19a009a9dd43a23a7c12045c83e82ac9d288ac',
+        address: 'mnfnJx2xWWptYmBzck3rdE851Dtu9GaZ3F',
+        sequenceNumber: 4294967294
+      }
+    ];
+    const fee = 7440;
+    const tx = Transactions.create({ chain: 'LTC', recipients, change, utxos, fee, rbf: true });
+
+    const keys = [
+      {
+        address: 'mnfnJx2xWWptYmBzck3rdE851Dtu9GaZ3F',
+        privKey: 'cSFjiifSbZ2hU4jTFwE993LCe2rkZGULCTGWTDWXzHvuXRKxpnc1'
+      },
+      { address: 'moVnNJpHHfssYJEnMTS5xXyGV8RhRQNRz5', privKey: 'cUWVirwp5vh1D6WWbYci3tuGniyf28ERpgU4uL5VSiFDfvNEhJqy' }
+    ];
+    const signed = Transactions.sign({ chain: 'LTC', tx, keys, utxos });
+    const expected =
+      '0200000002ab189f0d3bf494d3307effb79bafe0758907b86621edb8bd4cad4c6c6dc63e64010000006a47304402202eeb967801c0aad4f8241d8f90e2a9e2236f95c189165ba6b2ba4dc6b17bacbe02201b5d4dc0c32f6aa134d93698f85bf4c098d15fcbaada0b6ca2b8076fd8aa2741012102c8f8fa438666cbd287e28fb384b99555e4acce610e8141e887c9c458bba5db5cffffffffab189f0d3bf494d3307effb79bafe0758907b86621edb8bd4cad4c6c6dc63e64000000006a473044022072bdde2c0b413fc42d15d93e768a26f818dc5b225b9359235c09fd0452d6121a022007c00afa396d60d5b7919f2ba31e638817561cab4e2afed7a86dd636ee293c1001210321f2f13aed42db7257b64f77d574071a6e81e460ab3693eefb7482c12d1ff697ffffffff0200e1f505000000001976a914612fb4d5e27a28f5c54018d8948ca3a650741c4188acee152600000000001976a91486823ef7c8e210184cc8675189d37c4c9d8e1e0288ac00000000';
+    expect(signed).to.eq(expected);
   });
 });
 
@@ -439,7 +559,7 @@ describe('Transaction Sign', () => {
     } catch (err) {
       error = err;
     }
-    expect(error.message).to.include('invalid hexidecimal string');
+    expect(error.message).to.include('invalid hexlify value');
     expect(error).to.not.equal(undefined);
   });
 });

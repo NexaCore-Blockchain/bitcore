@@ -5,7 +5,7 @@ const async = require('async');
 
 const chai = require('chai');
 const sinon = require('sinon');
-const  CWC = require('crypto-wallet-core');
+const CWC = require('crypto-wallet-core');
 
 const LOG_LEVEL = 'info';
 //const LOG_LEVEL = 'debug';
@@ -21,7 +21,8 @@ const Bitcore_ = {
   bch: require('bitcore-lib-cash'),
   eth: Bitcore,
   xrp: Bitcore,
-  doge: require('bitcore-lib-doge')
+  doge: require('bitcore-lib-doge'),
+  ltc: require('bitcore-lib-ltc')
 };
 
 const { WalletService } = require('../../ts_build/lib/server');
@@ -46,7 +47,8 @@ const TO_SAT = {
   'eth': 1e18,
   'usdc': 1e6,
   'xrp': 1e6,
-  'doge': 1e8
+  'doge': 1e8,
+  'ltc': 1e8
 };
 
 const TOKENS = ['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x056fd409e1d7a124bd7017459dfea2f387b6d5cd'];
@@ -3817,6 +3819,13 @@ describe('Wallet service', function() {
       addr: 'DTZ1W1qmXM9w4xJa9MMp2cAjdQv4PWSs9V',
       lockedFunds: 0,
       flags: {},
+    },
+    {
+      coin: 'ltc',
+      key: 'id44btc',
+      addr: 'LUDZDsJHVwgZBc5HdfbbBgqU6hJZwWNseV',
+      lockedFunds: 0,
+      flags: {},
     }
   ];
 
@@ -3866,7 +3875,8 @@ describe('Wallet service', function() {
               bch:8000,
               eth:8000,
               xrp:8000,
-              doge:1e8
+              doge:1e8,
+              ltc:8000
             }
             let amount = coinAmount[coin];
             var txOpts = {
@@ -3954,7 +3964,7 @@ describe('Wallet service', function() {
               });
             });
           });
-          if(coin === 'btc' || coin === 'bch' || coin === 'doge') {
+          if(coin === 'btc' || coin === 'bch' || coin === 'doge' || coin === 'ltc') {
             it('should fail to create BTC/BCH tx for invalid amount', function(done) {
               var txOpts = {
                 outputs: [{
@@ -4390,7 +4400,8 @@ describe('Wallet service', function() {
                 bch:0.8,
                 eth:0.8,
                 xrp:0.8,
-                doge:1
+                doge:1,
+                ltc: 0.8
               }
               var txp1, txp2;
               var txOpts = {
@@ -4530,6 +4541,178 @@ describe('Wallet service', function() {
                 done();
               });
             });
+
+            if (coin === 'btc') {
+
+              it('should fail to publish ( replaceTxByFee -> undefined ) a temporary tx proposal if utxos are already spent in a RBF tx', function(done) {
+                  var txp1, txp2;
+                  var txOpts = {
+                    outputs: [{
+                      toAddress: addressStr,
+                      amount: 1e8,
+                    }],
+                    message: 'some message',
+                    feePerKb: 100e2,
+                    enableRBF: true
+                  };
+    
+                  async.waterfall([
+    
+                    function(next) {
+                      helpers.stubUtxos(server, wallet, [1, 2], function() {
+                        next();
+                      });
+                    },
+                    function(next) {
+                      txOpts = Object.assign(txOpts, flags);
+                      server.createTx(txOpts, next);
+                    },
+                    function(txp, next) {
+                      txp1 = txp;
+                      txOpts = Object.assign(txOpts, flags);
+                      server.createTx( txOpts , next);
+                    },
+                    function(txp, next) {
+                      txp2 = txp;
+                      should.exist(txp1);
+                      should.exist(txp2);
+                      var publishOpts = helpers.getProposalSignatureOpts(txp1, TestData.copayers[0].privKey_1H_0);
+                      server.publishTx(publishOpts, next);
+                    },
+                    function(txp, next) {
+                      // Sign & Broadcast txp1
+                      var signatures = helpers.clientSign(txp, TestData.copayers[0].xPrivKey_44H_0H_0H);
+                      server.signTx({
+                        txProposalId: txp.id,
+                        signatures: signatures
+                      }, function(err, txp) {
+    
+                        should.not.exist(err);
+    
+                        helpers.stubBroadcast(txp.txid);
+                        server.broadcastTx({
+                          txProposalId: txp.id
+                        }, function(err, txp) {
+    
+                          should.not.exist(err);
+                          should.exist(txp.txid);
+                          txp.status.should.equal('broadcasted');
+                          next();
+                        });
+                      });
+                    },
+                    function(next) {
+    
+                      var publishOpts = helpers.getProposalSignatureOpts(txp2, TestData.copayers[0].privKey_1H_0);
+                      server.publishTx(publishOpts, function(err, txp) {
+                        err.code.should.equal('UNAVAILABLE_UTXOS');
+                        next();
+                      });
+                    },
+                  ], function(err) {
+                    should.not.exist(err);
+                    done();
+                  });
+                });
+
+              it('should not fail to publish, sign and broadcast ( replaceTxByFee -> true ) a tx proposal if utxos are already spent in a RBF tx', function(done) {
+                var txp1, txp2;
+                var txOpts1 = {
+                  outputs: [{
+                    toAddress: addressStr,
+                    amount: 1e8,
+                  }],
+                  message: 'some message',
+                  feePerKb: 100e2,
+                  enableRBF: true
+                };
+                var txOpts2 = {
+                  outputs: [{
+                    toAddress: addressStr,
+                    amount: 1e8,
+                  }],
+                  message: 'some message',
+                  feePerKb: 120e2
+                };
+
+
+                async.waterfall([
+
+                  function(next) {
+                    helpers.stubUtxos(server, wallet, [1, 2], function() {
+                      next();
+                    });
+                  },
+                  function(next) {
+                    txOpts1 = Object.assign(txOpts1, flags);
+                    server.createTx(txOpts1, next);
+                  },
+                  function(txp, next) {
+                    txp1 = txp;
+                    txOpts2 = Object.assign(txOpts2, flags);
+                    server.createTx({ ...txOpts2, ...{ replaceTxByFee: true, inputs: txp1.inputs} }, next);
+                  },
+                  function(txp, next) {
+                    txp2 = txp;
+                    should.exist(txp1);
+                    should.exist(txp2);
+                    var publishOpts = helpers.getProposalSignatureOpts(txp1, TestData.copayers[0].privKey_1H_0);
+                    server.publishTx(publishOpts, next);
+                  },
+                  function(txp, next) {
+                    // Sign & Broadcast txp1
+                    var signatures = helpers.clientSign(txp, TestData.copayers[0].xPrivKey_44H_0H_0H);
+                    server.signTx({
+                      txProposalId: txp.id,
+                      signatures: signatures
+                    }, function(err, txp) {
+
+                      should.not.exist(err);
+
+                      helpers.stubBroadcast(txp.txid);
+                      server.broadcastTx({
+                        txProposalId: txp.id
+                      }, function(err, txp) {
+
+                        should.not.exist(err);
+                        should.exist(txp.txid);
+                        txp.status.should.equal('broadcasted');
+                        next();
+                      });
+                    });
+                  },
+                  function(next) {
+                    var publishOpts = helpers.getProposalSignatureOpts(txp2, TestData.copayers[0].privKey_1H_0);
+                    server.publishTx(publishOpts, next);
+                  },
+                  function(txp, next) {
+                    // Sign & Broadcast txp2
+                    var signatures = helpers.clientSign(txp, TestData.copayers[0].xPrivKey_44H_0H_0H);
+                    server.signTx({
+                      txProposalId: txp.id,
+                      signatures: signatures
+                    }, function(err, txp) {
+
+                      should.not.exist(err);
+
+                      helpers.stubBroadcast(txp.txid);
+                      server.broadcastTx({
+                        txProposalId: txp.id
+                      }, function(err, txp) {
+
+                        should.not.exist(err);
+                        should.exist(txp.txid);
+                        txp.status.should.equal('broadcasted');
+                        next();
+                      });
+                    });
+                  },
+                ], function(err) {
+                  should.not.exist(err);
+                  done();
+                });
+              });
+            }
           }
         });
 
@@ -4579,6 +4762,11 @@ describe('Wallet service', function() {
                 level = 'normal';
                 expected = 1e8;
                 expectedNormal = 1e8;
+                break;
+              case 'ltc':
+                level = 'normal';
+                expected = 200e2;
+                expectedNormal = 200e2;
                 break;
               default:
                 level = 'economy';
@@ -4653,7 +4841,8 @@ describe('Wallet service', function() {
             bch:8000,
             eth:8000,
             xrp:8000,
-            doge:1e8
+            doge:1e8,
+            ltc: 8000
           }
           let amount = coinAmount[coin];
           helpers.stubUtxos(server, wallet, [1, 2], function() {
@@ -4686,14 +4875,15 @@ describe('Wallet service', function() {
         });
         it('should support creating a tx with no change address', function(done) {
           const coinFee = {
-            btc: 7000,
-            bch: 7000,
-            xrp: 7000,
+            btc: 3800,
+            bch: 3800,
+            xrp: 3800,
             eth: 210000000,
-            doge: 1e8
+            doge: 1e8,
+            ltc: 3800
           }
           helpers.stubUtxos(server, wallet, [1, 2], { coin }, function() {
-            var max = 3 * ts - coinFee[coin]; // Fees for this tx at 100bits/kB = 7000 sat
+            var max = 3 * ts - coinFee[coin]; // Fees for this tx at 100bits/kB = 3740 sat
             var txOpts = {
               outputs: [{
                 toAddress: addressStr,
@@ -4740,7 +4930,8 @@ describe('Wallet service', function() {
             bch:0.5,
             eth:0.5,
             xrp:0.5,
-            doge:1
+            doge:1,
+            ltc:0.5
           }
           helpers.stubUtxos(server, wallet, 2, { coin }, function() {
             var cwcStub = sandbox.stub(CWC.Transactions, 'create');
@@ -4760,6 +4951,11 @@ describe('Wallet service', function() {
               message: 'dummy exception'
             });
             var bitcoreStub = sandbox.stub(CWC.BitcoreLibDoge, 'Transaction');
+            bitcoreStub.throws({
+              name: 'dummy',
+              message: 'dummy exception'
+            });
+            var bitcoreStub = sandbox.stub(CWC.BitcoreLibLtc, 'Transaction');
             bitcoreStub.throws({
               name: 'dummy',
               message: 'dummy exception'
@@ -4850,7 +5046,7 @@ describe('Wallet service', function() {
               var txOpts = {
                 outputs: [{
                   toAddress: addressStr,
-                  amount: 20e2,
+                  amount: Defaults.MIN_OUTPUT_AMOUNT - 1,
                 }],
                 feePerKb: 100e2,
               };
@@ -4868,7 +5064,7 @@ describe('Wallet service', function() {
           
             it('should create tx with 0 change output', function(done) {
             helpers.stubUtxos(server, wallet, 2, function() {
-              var fee = 4100; // The exact fee of the resulting tx
+              var fee = 2260; // The exact fee of the resulting tx
               var amount = 2e8 - fee;
 
               var txOpts = {
@@ -5040,7 +5236,7 @@ describe('Wallet service', function() {
           });
 
 
-          if(coin !== 'doge') { // TODO
+          if(coin !== 'doge' && coin !== 'ltc') { // TODO
           it('should accept a tx proposal signed with a custom key', function(done) {
             var reqPrivKey = new Bitcore.PrivateKey();
             var reqPubKey = reqPrivKey.toPublicKey().toString();
@@ -5694,7 +5890,7 @@ describe('Wallet service', function() {
           });
         });
         it('should correct fee if resulting change would be below threshold', function(done) {
-          helpers.stubUtxos(server, wallet, ['200bit', '500sat'], function() {
+          helpers.stubUtxos(server, wallet, ['180bit', '500sat'], function() {
             var txOpts = {
               outputs: [{
                 toAddress: '18PzpUFkFZE8zKWUPvfykkTxmB9oMR8qP7',
@@ -7494,6 +7690,17 @@ describe('Wallet service', function() {
           toAddress: 'DMHR9z3hVfEMkfsxfP7CbVtYdPh2f5ESqo',
         }],
       },
+      {
+        n: 2,
+        name: 'Legacy, above min relay fee',
+        requiredFeeRate: 1e8,
+        fromSegwit: false,
+        utxos: Array(10).fill(1), // 10 utxo's of 1 DOGE each
+        outputs: [{
+          toAddress: 'DMHR9z3hVfEMkfsxfP7CbVtYdPh2f5ESqo',
+          amount: 8e8
+        }]
+      },
     ];
 
     function checkTx(txOpts, x, cb) {
@@ -7532,9 +7739,14 @@ describe('Wallet service', function() {
           //console.log('[server.js.7001:log:]',txp.raw); // TODO
           console.log(`Wire Size:${actualSize} vSize: ${vSize} (Segwit: ${x.fromSegwit})  Fee: ${t.getFee()} ActualRate:${Math.round(actualFeeRate)} RequiredRate:${x.requiredFeeRate}`);
 
-          // size should be above (or equal) the required FeeRate
-          actualFeeRate.should.not.be.below(x.requiredFeeRate);
-          actualFeeRate.should.be.below(x.requiredFeeRate * 1.5); // no more that 50% extra
+          // Fee should be more than min relay fee
+          t.getFee().should.be.gte(CWC.BitcoreLibDoge.Transaction.DUST_AMOUNT);
+
+          if (t.getFee() > CWC.BitcoreLibDoge.Transaction.DUST_AMOUNT) {
+            // size should be above (or equal) the required FeeRate
+            actualFeeRate.should.not.be.below(x.requiredFeeRate);
+            actualFeeRate.should.be.below(x.requiredFeeRate * 1.5); // no more that 50% extra
+          }
           return cb(actualFeeRate);
         });
       });

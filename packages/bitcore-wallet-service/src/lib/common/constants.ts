@@ -8,12 +8,14 @@ module.exports = {
     ETH: 'eth',
     XRP: 'xrp',
     DOGE: 'doge',
+    LTC: 'ltc',
     USDC: 'usdc',
     PAX: 'pax',
     GUSD: 'gusd',
     BUSD: 'busd',
     DAI: 'dai',
-    WBTC: 'wbtc'
+    WBTC: 'wbtc',
+    SHIB: 'shib'
   },
 
   ERC20: {
@@ -22,13 +24,15 @@ module.exports = {
     GUSD: 'gusd',
     BUSD: 'busd',
     DAI: 'dai',
-    WBTC: 'wbtc'
+    WBTC: 'wbtc',
+    SHIB: 'shib'
   },
 
   UTXO_COINS: {
     BTC: 'btc',
     BCH: 'bch',
-    DOGE: 'doge'
+    DOGE: 'doge',
+    LTC: 'ltc'
   },
 
   NETWORKS: {

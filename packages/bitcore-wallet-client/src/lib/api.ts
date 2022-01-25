@@ -22,7 +22,8 @@ var Bitcore_ = {
   bch: CWC.BitcoreLibCash,
   eth: CWC.BitcoreLib,
   xrp: CWC.BitcoreLib,
-  doge: CWC.BitcoreLibDoge
+  doge: CWC.BitcoreLibDoge,
+  ltc: CWC.BitcoreLibLtc
 };
 var Mnemonic = require('bitcore-mnemonic');
 var url = require('url');
@@ -68,6 +69,7 @@ export class API extends EventEmitter {
   static Bitcore = CWC.BitcoreLib;
   static BitcoreCash = CWC.BitcoreLibCash;
   static BitcoreDoge = CWC.BitcoreLibDoge;
+  static BitcoreLtc = CWC.BitcoreLibLtc;
 
   constructor(opts?) {
     super();
@@ -1057,6 +1059,7 @@ export class API extends EventEmitter {
         var c = this.credentials;
         var walletPrivKey = Bitcore.PrivateKey.fromString(c.walletPrivKey);
         var walletId = c.walletId;
+        var useNativeSegwit = c.addressType === Constants.SCRIPT_TYPES.P2WPKH;
         var supportBIP44AndP2PKH =
           c.derivationStrategy != Constants.DERIVATION_STRATEGIES.BIP45;
         var encWalletName = Utils.encryptMessage(
@@ -1073,8 +1076,12 @@ export class API extends EventEmitter {
           coin: c.coin,
           network: c.network,
           id: walletId,
-          supportBIP44AndP2PKH
+          usePurpose48: c.n > 1,
+          useNativeSegwit
         };
+
+        if (!!supportBIP44AndP2PKH)
+          args['supportBIP44AndP2PKH'] = supportBIP44AndP2PKH;
 
         this.request.post('/v2/wallets/', args, (err, body) => {
           if (err) {
@@ -1088,6 +1095,12 @@ export class API extends EventEmitter {
           }
 
           var i = 1;
+          var opts = {
+            coin: c.coin
+          };
+          if (!!supportBIP44AndP2PKH)
+            opts['supportBIP44AndP2PKH'] = supportBIP44AndP2PKH;
+
           async.each(
             this.credentials.publicKeyRing,
             (item, next) => {
@@ -1098,10 +1111,7 @@ export class API extends EventEmitter {
                 item.xPubKey,
                 item.requestPubKey,
                 name,
-                {
-                  coin: c.coin,
-                  supportBIP44AndP2PKH
-                },
+                opts,
                 err => {
                   // Ignore error is copayer already in wallet
                   if (err && err instanceof Errors.COPAYER_IN_WALLET)
@@ -1395,6 +1405,8 @@ export class API extends EventEmitter {
       API._encryptMessage(opts.message, this.credentials.sharedEncryptingKey) ||
       null;
     args.payProUrl = opts.payProUrl || null;
+    args.isTokenSwap = opts.isTokenSwap || null;
+    args.replaceTxByFee = opts.replaceTxByFee || null;
     _.each(args.outputs, o => {
       o.message =
         API._encryptMessage(o.message, this.credentials.sharedEncryptingKey) ||
@@ -1420,12 +1432,14 @@ export class API extends EventEmitter {
   // * @param {Boolean} opts.sendMax - Optional. Send maximum amount of funds that make sense under the specified fee/feePerKb conditions. (defaults to false).
   // * @param {string} opts.payProUrl - Optional. Paypro URL for peers to verify TX
   // * @param {Boolean} opts.excludeUnconfirmedUtxos[=false] - Optional. Do not use UTXOs of unconfirmed transactions as inputs
-  // * @param {Boolean} opts.validateOutputs[=true] - Optional. Perform validation on outputs.
   // * @param {Boolean} opts.dryRun[=false] - Optional. Simulate the action but do not change server state.
   // * @param {Array} opts.inputs - Optional. Inputs for this TX
   // * @param {number} opts.fee - Optional. Use an fixed fee for this TX (only when opts.inputs is specified)
   // * @param {Boolean} opts.noShuffleOutputs - Optional. If set, TX outputs won't be shuffled. Defaults to false
   // * @param {String} opts.signingMethod - Optional. If set, force signing method (ecdsa or schnorr) otherwise use default for coin
+  // * @param {Boolean} opts.isTokenSwap - Optional. To specify if we are trying to make a token swap
+  // * @param {Boolean} opts.enableRBF - Optional. Enable BTC Replace By Fee
+  // * @param {Boolean} opts.replaceTxByFee - Optional. Ignore locked utxos check ( used for replacing a transaction designated as RBF)
   // * @returns {Callback} cb - Return error or the transaction proposal
   // * @param {String} baseUrl - Optional. ONLY FOR TESTING
   // */
@@ -1502,6 +1516,7 @@ export class API extends EventEmitter {
   // *
   // * @param {Object} opts
   // * @param {Boolean} opts.ignoreMaxGap[=false]
+  // * @param {Boolean} opts.isChange[=false]
   // * @param {Callback} cb
   // * @returns {Callback} cb - Return error or the address
   // */
@@ -1594,8 +1609,6 @@ export class API extends EventEmitter {
 
     var args = [];
     if (opts.coin) {
-      if (!_.includes(Constants.COINS, opts.coin))
-        return cb(new Error('Invalid coin'));
       args.push('coin=' + opts.coin);
     }
     if (opts.tokenAddress) {
@@ -2086,14 +2099,14 @@ export class API extends EventEmitter {
 
           const weightedSize = [];
 
-          let isBtcSegwit =
-            txp.coin == 'btc' &&
+          let isSegwit =
+            (txp.coin == 'btc' || txp.coin == 'ltc') &&
             (txp.addressType == 'P2WSH' || txp.addressType == 'P2WPKH');
 
           let i = 0;
           for (const unsigned of unserializedTxs) {
             let size;
-            if (isBtcSegwit) {
+            if (isSegwit) {
               // we dont have a fast way to calculate weigthedSize`
               size = Math.floor((txp.fee / txp.feePerKb) * 1000) - 10;
             } else {
@@ -2111,7 +2124,8 @@ export class API extends EventEmitter {
           for (const signed of serializedTxs) {
             signedTransactions.push({
               tx: signed,
-              weightedSize: weightedSize[i++]
+              weightedSize: weightedSize[i++],
+              escrowReclaimTx: txp.escrowReclaimTx
             });
           }
           PayProV2.verifyUnsignedPayment({
@@ -2547,6 +2561,20 @@ export class API extends EventEmitter {
   }
 
   // /**
+  // * Returns contract info. (name symbol precision)
+  // * @param {string} opts.tokenAddress - token contract address
+  // * @return {Callback} cb - Return error (if exists) instantiation info
+  // */
+  getTokenContractInfo(opts, cb) {
+    var url = '/v1/token/info';
+    opts.network = this.credentials.network;
+    this.request.post(url, opts, (err, contractInfo) => {
+      if (err) return cb(err);
+      return cb(null, contractInfo);
+    });
+  }
+
+  // /**
   // * Get wallet status based on a string identifier (one of: walletId, address, txid)
   // *
   // * @param {string} opts.identifier - The identifier
@@ -2791,7 +2819,7 @@ export class API extends EventEmitter {
         : new API(clientOpts);
 
       client.fromString(c);
-      client.openWallet({}, (err, status) => {
+      client.openWallet({}, async (err, status) => {
         //        console.log(
         //          `PATH: ${c.rootPath} n: ${c.n}:`,
         //          err && err.message ? err.message : 'FOUND!'
@@ -2813,16 +2841,35 @@ export class API extends EventEmitter {
           // Eth wallet with tokens?
           const tokenAddresses = status.preferences.tokenAddresses;
           if (!_.isEmpty(tokenAddresses)) {
+            function oneInchGetTokensData() {
+              return new Promise((resolve, reject) => {
+                client.request.get(
+                  '/v1/service/oneInch/getTokens',
+                  (err, data) => {
+                    if (err) return reject(err);
+                    return resolve(data);
+                  }
+                );
+              });
+            }
+            let customTokensData;
+            try {
+              customTokensData = await oneInchGetTokensData();
+            } catch (error) {
+              log.warn('oneInchGetTokensData err', error);
+              customTokensData = null;
+            }
             _.each(tokenAddresses, t => {
-              const token = Constants.TOKEN_OPTS[t];
+              const token =
+                Constants.TOKEN_OPTS[t] ||
+                (customTokensData && customTokensData[t]);
               if (!token) {
                 log.warn(`Token ${t} unknown`);
                 return;
               }
               log.info(`Importing token: ${token.name}`);
-              const tokenCredentials = client.credentials.getTokenCredentials(
-                token
-              );
+              const tokenCredentials =
+                client.credentials.getTokenCredentials(token);
               let tokenClient = _.cloneDeep(client);
               tokenClient.credentials = tokenCredentials;
               clients.push(tokenClient);
@@ -2835,14 +2882,13 @@ export class API extends EventEmitter {
               log.info(
                 `Importing multisig wallet. Address: ${info.multisigContractAddress} - m: ${info.m} - n: ${info.n}`
               );
-              const multisigEthCredentials = client.credentials.getMultisigEthCredentials(
-                {
+              const multisigEthCredentials =
+                client.credentials.getMultisigEthCredentials({
                   walletName: info.walletName,
                   multisigContractAddress: info.multisigContractAddress,
                   n: info.n,
                   m: info.m
-                }
-              );
+                });
               let multisigEthClient = _.cloneDeep(client);
               multisigEthClient.credentials = multisigEthCredentials;
               clients.push(multisigEthClient);
@@ -2855,9 +2901,8 @@ export class API extends EventEmitter {
                     return;
                   }
                   log.info(`Importing multisig token: ${token.name}`);
-                  const tokenCredentials = multisigEthClient.credentials.getTokenCredentials(
-                    token
-                  );
+                  const tokenCredentials =
+                    multisigEthClient.credentials.getTokenCredentials(token);
                   let tokenClient = _.cloneDeep(multisigEthClient);
                   tokenClient.credentials = tokenCredentials;
                   clients.push(tokenClient);
@@ -2889,8 +2934,12 @@ export class API extends EventEmitter {
         ['xrp', 'testnet'],
         ['doge', 'livenet'],
         ['doge', 'testnet'],
+        ['ltc', 'testnet'],
+        ['ltc', 'livenet'],
         ['btc', 'livenet', true],
-        ['bch', 'livenet', true]
+        ['bch', 'livenet', true],
+        ['doge', 'livenet', true],
+        ['ltc', 'livenet', true]
       ];
       if (key.use44forMultisig) {
         //  testing old multi sig
@@ -3162,6 +3211,15 @@ export class API extends EventEmitter {
           return resolve(data);
         }
       );
+    });
+  }
+
+  oneInchGetSwap(data): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.request.post('/v1/service/oneInch/getSwap', data, (err, data) => {
+        if (err) return reject(err);
+        return resolve(data);
+      });
     });
   }
 }

@@ -1,6 +1,6 @@
 import { Readable } from 'stream';
+import { Transaction } from 'web3-eth';
 import { AbiItem } from 'web3-utils';
-import { Transaction } from 'web3/eth/types';
 import { Config } from '../../../services/config';
 import { StreamWalletTransactionsParams } from '../../../types/namespaces/ChainStateProvider';
 import { MultisigAbi } from '../abi/multisig';
@@ -40,18 +40,20 @@ export class GnosisApi {
     sender: string,
     txId: string
   ): Promise<Partial<Transaction>[]> {
+    const { web3 } = await ETH.getWeb3(network);
     const networkConfig = Config.chainConfig({ chain: 'ETH', network });
     const { gnosisFactory = this.gnosisFactories[network] } = networkConfig;
     let query = { chain: 'ETH', network, txid: txId };
-    let found = await EthTransactionStorage.collection.findOne(query);
+    const found = await EthTransactionStorage.collection.findOne(query);
     const blockHeight = found && found.blockHeight ? found.blockHeight : null;
+    if (!blockHeight || blockHeight < 0) return Promise.resolve([]);
     const contract = await this.multisigFor(network, gnosisFactory);
     const contractInfo = await contract.getPastEvents('ContractInstantiation', {
-      fromBlock: blockHeight || 0,
-      toBlock: blockHeight || 'latest'
+      fromBlock: web3.utils.toHex(blockHeight),
+      toBlock: web3.utils.toHex(blockHeight)
     });
     return this.convertMultisigContractInstantiationInfo(
-      contractInfo.filter(info => info.returnValues.sender === sender)
+      contractInfo.filter(info => info.returnValues.sender.toLowerCase() === sender.toLowerCase())
     );
   }
 

@@ -22,11 +22,13 @@ export interface ITxProposal {
   walletId: string;
   creatorId: string;
   coin: string;
+  chain: string;
   network: string;
   message: string;
   payProUrl: string;
   from: string;
   changeAddress: string;
+  escrowAddress: string;
   inputs: any[];
   outputs: Array<{
     amount: number;
@@ -68,6 +70,10 @@ export interface ITxProposal {
   destinationTag?: string;
   invoiceID?: string;
   lockUntilBlockHeight?: number;
+  instantAcceptanceEscrow?: number;
+  isTokenSwap?: boolean;
+  enableRBF?: boolean;
+  replaceTxByFee?: boolean;
 }
 
 export class TxProposal {
@@ -79,11 +85,13 @@ export class TxProposal {
   walletId: string;
   creatorId: string;
   coin: string;
+  chain: string;
   network: string;
   message: string;
   payProUrl: string;
   from: string;
   changeAddress: any;
+  escrowAddress: any;
   inputs: any[];
   outputs: Array<{
     amount: number;
@@ -127,11 +135,14 @@ export class TxProposal {
   destinationTag?: string;
   invoiceID?: string;
   lockUntilBlockHeight?: number;
+  instantAcceptanceEscrow?: number;
+  isTokenSwap?: boolean;
+  enableRBF?: boolean;
+  replaceTxByFee?: boolean;
 
   static create(opts) {
     opts = opts || {};
 
-    $.checkArgument(Utils.checkValueInCollection(opts.coin, Constants.COINS));
     $.checkArgument(Utils.checkValueInCollection(opts.network, Constants.NETWORKS));
 
     const x = new TxProposal();
@@ -151,15 +162,22 @@ export class TxProposal {
     x.walletId = opts.walletId;
     x.creatorId = opts.creatorId;
     x.coin = opts.coin;
+    x.chain = opts.chain;
     x.network = opts.network;
     x.signingMethod = opts.signingMethod;
     x.message = opts.message;
     x.payProUrl = opts.payProUrl;
     x.changeAddress = opts.changeAddress;
+    x.escrowAddress = opts.escrowAddress;
+    x.instantAcceptanceEscrow = opts.instantAcceptanceEscrow;
     x.outputs = _.map(opts.outputs, output => {
       return _.pick(output, ['amount', 'toAddress', 'message', 'data', 'gasLimit', 'script']);
     });
-    x.outputOrder = _.range(x.outputs.length + 1);
+    let numOutputs = x.outputs.length + 1;
+    if (x.instantAcceptanceEscrow) {
+      numOutputs = numOutputs + 1;
+    }
+    x.outputOrder = _.range(numOutputs);
     if (!opts.noShuffleOutputs) {
       x.outputOrder = _.shuffle(x.outputOrder);
     }
@@ -190,6 +208,9 @@ export class TxProposal {
     }
 
     // Coin specific features
+    // BTC
+    x.enableRBF = opts.enableRBF;
+    x.replaceTxByFee = opts.replaceTxByFee;
 
     // ETH
     x.gasPrice = opts.gasPrice;
@@ -198,6 +219,7 @@ export class TxProposal {
     x.gasLimit = opts.gasLimit; // Backward compatibility for BWC <= 8.9.0
     x.data = opts.data; // Backward compatibility for BWC <= 8.9.0
     x.tokenAddress = opts.tokenAddress;
+    x.isTokenSwap = opts.isTokenSwap;
     x.multisigContractAddress = opts.multisigContractAddress;
 
     // XRP
@@ -220,12 +242,15 @@ export class TxProposal {
     x.walletId = obj.walletId;
     x.creatorId = obj.creatorId;
     x.coin = obj.coin || Defaults.COIN;
+    x.chain = obj.chain ? obj.chain : ChainService.getChain(x.coin);
     x.network = obj.network;
     x.outputs = obj.outputs;
     x.amount = obj.amount;
     x.message = obj.message;
     x.payProUrl = obj.payProUrl;
     x.changeAddress = obj.changeAddress;
+    x.escrowAddress = obj.escrowAddress;
+    x.instantAcceptanceEscrow = obj.instantAcceptanceEscrow;
     x.inputs = obj.inputs;
     x.walletM = obj.walletM;
     x.walletN = obj.walletN;
@@ -253,6 +278,10 @@ export class TxProposal {
 
     x.lockUntilBlockHeight = obj.lockUntilBlockHeight;
 
+    // BTC
+    x.enableRBF = obj.enableRBF;
+    x.replaceTxByFee = obj.replaceTxByFee;
+
     // ETH
     x.gasPrice = obj.gasPrice;
     x.from = obj.from;
@@ -260,6 +289,7 @@ export class TxProposal {
     x.gasLimit = obj.gasLimit; // Backward compatibility for BWC <= 8.9.0
     x.data = obj.data; // Backward compatibility for BWC <= 8.9.0
     x.tokenAddress = obj.tokenAddress;
+    x.isTokenSwap = obj.isTokenSwap;
     x.multisigContractAddress = obj.multisigContractAddress;
     x.multisigTxId = obj.multisigTxId;
 
@@ -374,7 +404,7 @@ export class TxProposal {
       // Tests signatures are OK
       const tx = ChainService.getBitcoreTx(this);
       ChainService.addSignaturesToBitcoreTx(
-        this.coin,
+        this.chain,
         tx,
         this.inputs,
         this.inputPaths,

@@ -1,10 +1,9 @@
 import { CryptoRpc } from 'crypto-rpc';
-import * as _ from 'lodash';
 import { ObjectID } from 'mongodb';
 import { Readable } from 'stream';
 import Web3 from 'web3';
+import { Transaction } from 'web3-eth';
 import { AbiItem } from 'web3-utils';
-import { Transaction } from 'web3/eth/types';
 import Config from '../../../config';
 import logger from '../../../logger';
 import { MongoBound } from '../../../models/base';
@@ -157,7 +156,7 @@ export class ETHStateProvider extends InternalStateProvider implements IChainSta
           return { confirmed: numberBalance, unconfirmed: 0, balance: numberBalance };
         }
       },
-      CacheStorage.Times.Hour / 2
+      CacheStorage.Times.Minute
     );
     return balances;
   }
@@ -235,18 +234,22 @@ export class ETHStateProvider extends InternalStateProvider implements IChainSta
 
   async streamAddressTransactions(params: StreamAddressUtxosParams) {
     const { req, res, args, chain, network, address } = params;
-    const { limit, since, tokenAddress } = args;
+    const { limit, /*since,*/ tokenAddress } = args;
     if (!args.tokenAddress) {
       const query = {
         $or: [
           { chain, network, from: address },
-          { chain, network, to: address }
+          { chain, network, to: address },
+          { chain, network, 'internal.action.to': address }
         ]
       };
-      Storage.apiStreamingFind(EthTransactionStorage, query, { limit, since, paging: '_id' }, req!, res!);
+
+      // NOTE: commented out since and paging for now b/c they were causing extra long query times on insight.
+      // The case where an address has >1000 txns is an edge case ATM and can be addressed later
+      Storage.apiStreamingFind(EthTransactionStorage, query, { limit /*since, paging: '_id'*/ }, req!, res!);
     } else {
       try {
-        const tokenTransfers = await this.getErc20Transfers(network, address, tokenAddress);
+        const tokenTransfers = await this.getErc20Transfers(network, address, tokenAddress, args);
         res!.json(tokenTransfers);
       } catch (e) {
         res!.status(500).send(e);
@@ -311,7 +314,8 @@ export class ETHStateProvider extends InternalStateProvider implements IChainSta
       chain,
       network,
       wallets: wallet._id,
-      'wallets.0': { $exists: true }
+      'wallets.0': { $exists: true },
+      blockHeight: { $gt: -3 } // Exclude invalid transactions
     } as any;
     if (args) {
       if (args.startBlock || args.endBlock) {
@@ -341,6 +345,9 @@ export class ETHStateProvider extends InternalStateProvider implements IChainSta
             query.blockTimeNormalized.$lt = new Date(args.endDate);
           }
         }
+      }
+      if (args.includeInvalidTxs) {
+        delete query.blockHeight;
       }
     }
     return query;
@@ -450,36 +457,40 @@ export class ETHStateProvider extends InternalStateProvider implements IChainSta
 
   async estimateGas(params): Promise<number> {
     return new Promise(async (resolve, reject) => {
-      let { network, value, from, data, gasPrice, to } = params;
-      const { web3 } = await this.getWeb3(network);
-      const dataDecoded = EthTransactionStorage.abiDecode(data);
+      try {
+        let { network, value, from, data, gasPrice, to } = params;
+        const { web3 } = await this.getWeb3(network);
+        const dataDecoded = EthTransactionStorage.abiDecode(data);
 
-      if (dataDecoded && dataDecoded.type === 'INVOICE' && dataDecoded.name === 'pay') {
-        value = dataDecoded.params[0].value;
-        gasPrice = dataDecoded.params[1].value;
+        if (dataDecoded && dataDecoded.type === 'INVOICE' && dataDecoded.name === 'pay') {
+          value = dataDecoded.params[0].value;
+          gasPrice = dataDecoded.params[1].value;
+        }
+
+        const opts = {
+          method: 'eth_estimateGas',
+          params: [
+            {
+              data,
+              to: to && to.toLowerCase(),
+              from: from && from.toLowerCase(),
+              gasPrice: web3.utils.toHex(gasPrice),
+              value: web3.utils.toHex(value)
+            }
+          ],
+          jsonrpc: '2.0',
+          id: 1
+        };
+
+        let provider = web3.currentProvider as any;
+        provider.send(opts, (err, data) => {
+          if (err) return reject(err);
+          if (!data.result) return reject(data.message);
+          return resolve(Number(data.result));
+        });
+      } catch (err) {
+        return reject(err);
       }
-
-      const opts = {
-        method: 'eth_estimateGas',
-        params: [
-          {
-            data,
-            to: to.toLowerCase(),
-            from: from.toLowerCase(),
-            gasPrice: web3.utils.toHex(gasPrice),
-            value: web3.utils.toHex(value)
-          }
-        ],
-        jsonrpc: '2.0',
-        id: 1
-      };
-
-      let provider = web3.currentProvider as any;
-      provider.send(opts, (err, data) => {
-        if (err) return reject(err);
-        if (!data.result) return reject(data.message);
-        return resolve(Number(data.result));
-      });
     });
   }
 
@@ -523,13 +534,21 @@ export class ETHStateProvider extends InternalStateProvider implements IChainSta
         }
       }
 
+      const addressBatchLC = addressBatch.map(address => address.toLowerCase());
+
       await EthTransactionStorage.collection.updateMany(
         {
           $or: [
             { chain, network, from: { $in: addressBatch } },
             { chain, network, to: { $in: addressBatch } },
-            { chain, network, 'internal.action.to': { $in: addressBatch } },
-            { chain, network, 'abiType.params.0.value': { $in: addressBatch.map(address => address.toLowerCase()) } }
+            { chain, network, 'internal.action.to': { $in: addressBatchLC } },
+            {
+              chain,
+              network,
+              'abiType.params.0.value': { $in: addressBatchLC },
+              'abiType.type': 'ERC20',
+              'abiType.name': 'transfer'
+            }
           ]
         },
         { $addToSet: { wallets: params.wallet._id } }

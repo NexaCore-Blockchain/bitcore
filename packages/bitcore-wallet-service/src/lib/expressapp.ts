@@ -822,6 +822,17 @@ export class ExpressApp {
       });
     });
 
+    router.post('/v1/token/info', (req, res) => {
+      getServerWithAuth(req, res, async server => {
+        try {
+          const tokenContractInfo = await server.getTokenContractInfo(req.body);
+          res.json(tokenContractInfo);
+        } catch (err) {
+          returnError(err, res, req);
+        }
+      });
+    });
+
     router.get('/v1/sendmaxinfo/', (req, res) => {
       getServerWithAuth(req, res, server => {
         const q = req.query;
@@ -1304,6 +1315,17 @@ export class ExpressApp {
       });
     });
 
+    router.post('/v1/service/checkAvailability', (req, res) => {
+      let server, response;
+      try {
+        server = getServer(req, res);
+        response = server.checkServiceAvailability(req);
+        return res.json(response);
+      } catch (ex) {
+        return returnError(ex, res, req);
+      }
+    });
+
     router.post('/v1/service/simplex/quote', (req, res) => {
       getServerWithAuth(req, res, server => {
         server
@@ -1441,6 +1463,67 @@ export class ExpressApp {
         .catch(err => {
           if (err) return returnError(err, res, req);
         });
+    });
+
+    router.get('/v1/service/oneInch/getReferrerFee', (req, res) => {
+      let server;
+      try {
+        server = getServer(req, res);
+      } catch (ex) {
+        return returnError(ex, res, req);
+      }
+      server
+        .oneInchGetReferrerFee(req)
+        .then(response => {
+          res.json(response);
+        })
+        .catch(err => {
+          if (err) return returnError(err, res, req);
+        });
+    });
+
+    router.post('/v1/service/oneInch/getSwap', (req, res) => {
+      getServerWithAuth(req, res, server => {
+        server
+          .oneInchGetSwap(req)
+          .then(response => {
+            res.json(response);
+          })
+          .catch(err => {
+            if (err) return returnError(err, res, req);
+          });
+      });
+    });
+
+    router.get('/v1/service/oneInch/getTokens', (req, res) => {
+      let server;
+      try {
+        server = getServer(req, res);
+      } catch (ex) {
+        return returnError(ex, res, req);
+      }
+      server
+        .oneInchGetTokens(req)
+        .then(response => {
+          res.json(response);
+        })
+        .catch(err => {
+          if (err) return returnError(err, res, req);
+        });
+    });
+
+    router.get('/v1/services/dex/getSpenderApprovalWhitelist', (req, res) => {
+      let server;
+      try {
+        server = getServer(req, res);
+      } catch (ex) {
+        return returnError(ex, res, req);
+      }
+
+      server.getSpenderApprovalWhitelist((err, response) => {
+        if (err) return returnError(err, res, req);
+        res.json(response);
+      });
     });
 
     router.get('/v1/service/payId/:payId', (req, res) => {
